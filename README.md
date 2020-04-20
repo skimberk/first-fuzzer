@@ -35,6 +35,14 @@ Renamed `ANTLRv4LexerPythonTarget.g4` to `ANTLRv4Lexer.g4` and also replaced occ
 mv ANTLRv4LexerPythonTarget.g4 ANTLRv4Lexer.g4 && perl -pi -e s,ANTLRv4LexerPythonTarget,ANTLRv4Lexer,g ANTLRv4Lexer.g4
 ```
 
+I removed the following part of `ANTLRv4Lexer.g4` as it was causing the error `ModuleNotFoundError: No module named 'LexerAdaptor'` and removing it fixed it (it gets imported anyway):
+
+```
+@header {
+from LexerAdaptor import LexerAdaptor
+}
+```
+
 Downloaded ANTLR using:
 
 ```
