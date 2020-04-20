@@ -31,6 +31,10 @@ def build_expr(node):
 
 		print(str(node.identifier().TOKEN_REF() or node.identifier().RULE_REF()))
 	elif isinstance(node, (ANTLRv4Parser.ElementContext, ANTLRv4Parser.LexerElementContext)):
+		if node.actionBlock():
+			print(''.join(str(child) for child in node.actionBlock().ACTION_CONTENT()))
+			return
+
 		suffix = None
 		if node.ebnfSuffix():
 			suffix = node.ebnfSuffix()
