@@ -28,35 +28,58 @@ class Node():
 	def add_child(self, child):
 		self.children.append(child)
 
-class RuleNode(Node):
+class ParserRuleNode(Node):
 	def __init__(self, name):
 		super().__init__()
+		print('ParserRuleNode', name)
 		self.name = name
 
-class StringLiteralNode(Node):
-	def __init__(self, value):
+class LexerRuleNode(Node):
+	def __init__(self, name):
 		super().__init__()
-		self.value = value
+		print('LexerRuleNode', name)
+		self.name = name
 
 class RuleRefNode(Node):
 	def __init__(self, rule):
 		super().__init__()
+		print('RuleRefNode', rule)
 		self.rule = rule
 
 class TokenRefNode(Node):
 	def __init__(self, token):
 		super().__init__()
+		print('TokenRefNode', token)
 		self.token = token
 
 class QuantifierNode(Node):
 	def __init__(self, quant):
 		super().__init__()
+		print('QuantifierNode', quant)
 		self.quant = quant
 
 class AlternativeNode(Node):
 	def __init__(self, label):
 		super().__init__()
+		print('AlternativeNode', label)
 		self.label = label
+
+class StringLiteralNode(Node):
+	def __init__(self, value):
+		super().__init__()
+		print('StringLiteralNode', value)
+		self.value = value
+
+class CharsetNode(Node):
+	def __init__(self, charset):
+		super().__init__()
+		print('CharsetNode', charset)
+		self.charset = charset
+
+class NotNode(Node):
+	def __init__(self):
+		super().__init__()
+		print('Not')
 
 def add_children(rule, node):
 	if rule.getChildCount():
@@ -65,9 +88,15 @@ def add_children(rule, node):
 
 def build_graph(rule, parent):
 	if isinstance(rule, ANTLRv4Parser.ParserRuleSpecContext):
-		node = RuleNode(str(rule.RULE_REF()))
+		node = ParserRuleNode(str(rule.RULE_REF()))
 		parent.add_child(node)
 		add_children(rule, node)
+
+	elif isinstance(rule, ANTLRv4Parser.LexerRuleSpecContext):
+		node = LexerRuleNode(str(rule.TOKEN_REF()))
+		parent.add_child(node)
+		add_children(rule, node)
+
 	elif isinstance(rule, (ANTLRv4Parser.ElementContext, ANTLRv4Parser.LexerElementContext)):
 		suffix = None
 		if rule.ebnfSuffix():
@@ -81,9 +110,11 @@ def build_graph(rule, parent):
 			add_children(rule, node)
 		else:
 			build_graph(rule.children[0], parent)
+
 	elif isinstance(rule, ANTLRv4Parser.RulerefContext):
 		node = RuleRefNode(str(rule.RULE_REF()))
 		parent.add_child(node)
+
 	elif isinstance(rule, ANTLRv4Parser.TerminalContext):
 		if rule.TOKEN_REF():
 			node = TokenRefNode(str(rule.TOKEN_REF()))
@@ -91,16 +122,50 @@ def build_graph(rule, parent):
 		elif rule.STRING_LITERAL():
 			node = StringLiteralNode(str(rule.STRING_LITERAL()))
 			parent.add_child(node)
+
 	elif isinstance(rule, ANTLRv4Parser.LabeledAltContext):
-		node = AlternativeNode(rule.identifier())
+		label = None
+		if rule.identifier() and (rule.identifier().TOKEN_REF() or rule.identifier().RULE_REF()):
+			label = str(rule.identifier().TOKEN_REF() or rule.identifier().RULE_REF())
+
+		node = AlternativeNode(label)
 		parent.add_child(node)
 		add_children(rule.alternative(), node)
+
+	elif isinstance(rule, (ANTLRv4Parser.AtomContext, ANTLRv4Parser.LexerAtomContext)):
+		lexer_atom = isinstance(rule, ANTLRv4Parser.LexerAtomContext)
+
+		if rule.DOT():
+			print('DOT')
+		elif rule.notSet():
+			node = NotNode()
+			parent.add_child(node)
+			add_children(rule.notSet(), node)
+		elif lexer_atom and rule.characterRange():
+			print('characterRange', rule.characterRange())
+		elif lexer_atom and rule.LEXER_CHAR_SET():
+			print('charSet', rule.LEXER_CHAR_SET())
+		else:
+			add_children(rule, parent)
+
+	elif isinstance(rule, ANTLRv4Parser.SetElementContext):
+		if rule.TOKEN_REF():
+			node = TokenRefNode(str(rule.TOKEN_REF()))
+			parent.add_child(node)
+		elif rule.STRING_LITERAL():
+			node = StringLiteralNode(str(rule.STRING_LITERAL()))
+			parent.add_child(node)
+		elif rule.characterRange():
+			print('characterRange', rule.characterRange())
+		elif rule.LEXER_CHAR_SET():
+			print('charSet', rule.LEXER_CHAR_SET())
+
 	elif isinstance(rule, ParserRuleContext):
 		add_children(rule, parent)
 
 node = Node()
 build_graph(current_root, node)
-print(node.children[1].children[0].children[2].children)
+print(node.children[11].children)
 
 # def build_expr(node):
 # 	print(type(node))
@@ -145,4 +210,4 @@ print(node.children[1].children[0].children[2].children)
 # 			for child in node.children:
 # 				build_expr(child)
 
-# build_expr(node)
+# build_expr(current_root)
