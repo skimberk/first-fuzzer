@@ -24,12 +24,15 @@ current_root = antlr_parser.grammarSpec()
 # 		print('GAAAH')
 
 escaped_values = {
+	# See https://github.com/antlr/antlr4/blob/8c50731894e045be3e19799b84b39e9a60e2ab61/tool/src/org/antlr/v4/misc/CharSupport.java#L26
 	'n': '\n',
 	'r': '\r',
 	'b': '\b',
 	't': '\t',
 	'f': '\f',
 	'\\': '\\',
+	# The following can be escaped in charset
+	# See https://github.com/antlr/antlr4/blob/8c50731894e045be3e19799b84b39e9a60e2ab61/tool/src/org/antlr/v4/misc/EscapeSequenceParsing.java#L159
 	'-': '-',
 	']': ']'
 }
@@ -83,20 +86,20 @@ def parse_escape(s, start_offset):
 			offset = hex_end_offset
 
 		try:
-			unicode_codepoint = int(s[hex_start_offset:hex_end_offset], 16)
+			codepoint = int(s[hex_start_offset:hex_end_offset], 16)
 		except ValueError:
 			# Invalid hex
 			# TODO: Throw exception
 			return None
 
-		if unicode_codepoint < 0 or unicode_codepoint > maximum_unicode_codepoint:
+		if codepoint < 0 or codepoint > maximum_unicode_codepoint:
 			# Invalid unicode
 			# TODO: Throw exception
 			return None
 
-		return (unicode_codepoint, offset)
+		return (codepoint, offset)
 	elif escaped == 'p' or escaped == 'P':
-		# Not supported (yet)
+		# Unicode properties/categories not supported (yet)
 		# TODO: Throw exception
 		return None
 	elif escaped in escaped_values:
@@ -105,22 +108,66 @@ def parse_escape(s, start_offset):
 		# TODO: Throw exception
 		return None
 
+# Adapted from https://github.com/antlr/antlr4/blob/8c50731894e045be3e19799b84b39e9a60e2ab61/tool/src/org/antlr/v4/automata/LexerATNFactory.java#L439
+def get_set_from_charset_literal(s):
+	if len(s) == 0:
+		# Empty charset not allowed
+		# TODO: Throw Exception
+		return None
+
+	ranges = []
+	in_range = False
+
+	i = 0
+	while i < len(s):
+		char = s[i]
+		offset = i + 1 # Offset functions differently than in original function
+
+		if char == '-' and not in_range and i != 0 and i != len(s) - 1:
+			in_range = True
+		else:
+			codepoint = None
+
+			if char == '\\':
+				parse_result = parse_escape(s, i)
+
+				if parse_result is None:
+					# Parse failed
+					# TODO: Throw Exception
+					return None
+
+				codepoint, offset = parse_result
+			else:
+				codepoint = ord(char)
+
+			if in_range:
+				in_range = False
+				ranges[-1] = (ranges[-1][0], codepoint + 1)
+			else:
+				ranges.append((codepoint, codepoint + 1))
+
+		i = offset
+
+	return ranges
+
+print(get_set_from_charset_literal(r'"\\\u0000-\u001F'))
+
 
 # https://unicode-org.github.io/icu-docs/apidoc/released/icu4j/com/ibm/icu/text/UnicodeSet.html
 # https://github.com/antlr/antlr4/blob/8c50731894e045be3e19799b84b39e9a60e2ab61/tool/src/org/antlr/v4/automata/LexerATNFactory.java#L439
 # https://github.com/antlr/antlr4/blob/master/tool/src/org/antlr/v4/misc/EscapeSequenceParsing.java
 # Unicode codepoint is one character, in Python 3.3+: https://stackoverflow.com/a/42262842
-def charset_split(src):
-	ranges = []
+# def charset_split(src):
+# 	ranges = []
 
-	start = 0
-	for end in range(1, len(src) + 1):
-		subset = src[start:end]
+# 	start = 0
+# 	for end in range(1, len(src) + 1):
+# 		subset = src[start:end]
 
-		if len(subset) == 1 and subset != '\\':
-			ranges.append((ord(subset), ord(subset) + 1))
-			start += 1
-		elif len(subset) == 2
+# 		if len(subset) == 1 and subset != '\\':
+# 			ranges.append((ord(subset), ord(subset) + 1))
+# 			start += 1
+# 		elif len(subset) == 2
 
 
 
@@ -289,9 +336,9 @@ def build_graph(rule, parent):
 	elif isinstance(rule, ParserRuleContext):
 		add_children(rule, parent)
 
-node = Node()
-build_graph(current_root, node)
-print(node.children[11].children)
+# node = Node()
+# build_graph(current_root, node)
+# print(node.children[11].children)
 
 # def build_expr(node):
 # 	print(type(node))
