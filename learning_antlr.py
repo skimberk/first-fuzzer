@@ -23,7 +23,7 @@ current_root = antlr_parser.grammarSpec()
 # 	else:
 # 		print('GAAAH')
 
-mappings = {
+escaped_values = {
 	'n': '\n',
 	'r': '\r',
 	'b': '\b',
@@ -33,6 +33,78 @@ mappings = {
 	'-': '-',
 	']': ']'
 }
+
+maximum_unicode_codepoint = 0x10FFFF
+
+# Adapted from https://github.com/antlr/antlr4/blob/8c50731894e045be3e19799b84b39e9a60e2ab61/tool/src/org/antlr/v4/misc/EscapeSequenceParsing.java#L83
+def parse_escape(s, start_offset):
+	# Original Java code has to handle unicode codepoints which consist of more than one character,
+	# however in Python 3.3+, we don't have to worry about this: https://stackoverflow.com/a/42262842
+
+	offset = start_offset
+
+	if offset + 2 > len(s) or s[offset] != '\\':
+		# Invalid escape
+		# TODO: Throw exception
+		return None
+
+	offset += 1 # Move past backslash
+	escaped = s[offset]
+	offset += 1 # Move past escaped character
+
+	if escaped == 'u':
+		if offset + 3 > len(s):
+			# \u{1} is the shortest we support
+			# TODO: Throw exception
+			return None
+
+		hex_start_offset = None
+		hex_end_offset = None # Exclusive
+
+		if s[offset] == '{':
+			hex_start_offset = offset + 1
+
+			try:
+				hex_end_offset = s.index('}', hex_start_offset)
+			except ValueError:
+				# Closing bracket not found
+				# TODO: Throw exception
+				return None
+
+			offset = hex_end_offset + 1
+		else:
+			if offset + 4 > len(s):
+				# \uXXXX
+				# TODO: Throw exception
+				return None
+
+			hex_start_offset = offset
+			hex_end_offset = hex_start_offset + 4
+			offset = hex_end_offset
+
+		try:
+			unicode_codepoint = int(s[hex_start_offset:hex_end_offset], 16)
+		except ValueError:
+			# Invalid hex
+			# TODO: Throw exception
+			return None
+
+		if unicode_codepoint < 0 or unicode_codepoint > maximum_unicode_codepoint:
+			# Invalid unicode
+			# TODO: Throw exception
+			return None
+
+		return (unicode_codepoint, offset)
+	elif escaped == 'p' or escaped == 'P':
+		# Not supported (yet)
+		# TODO: Throw exception
+		return None
+	elif escaped in escaped_values:
+		return (ord(escaped_values[escaped]), offset)
+	else:
+		# TODO: Throw exception
+		return None
+
 
 # https://unicode-org.github.io/icu-docs/apidoc/released/icu4j/com/ibm/icu/text/UnicodeSet.html
 # https://github.com/antlr/antlr4/blob/8c50731894e045be3e19799b84b39e9a60e2ab61/tool/src/org/antlr/v4/automata/LexerATNFactory.java#L439
