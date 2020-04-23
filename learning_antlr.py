@@ -1,3 +1,5 @@
+import re
+
 from antlr4 import CommonTokenStream, FileStream, ParserRuleContext
 
 from antlr_stuff.compiled.ANTLRv4Parser import ANTLRv4Parser
@@ -20,6 +22,58 @@ current_root = antlr_parser.grammarSpec()
 # 		print('lexer', rule, str(rule_spec.TOKEN_REF()))
 # 	else:
 # 		print('GAAAH')
+
+mappings = {
+	'n': '\n',
+	'r': '\r',
+	'b': '\b',
+	't': '\t',
+	'f': '\f',
+	'\\': '\\',
+	'-': '-',
+	']': ']'
+}
+
+# https://unicode-org.github.io/icu-docs/apidoc/released/icu4j/com/ibm/icu/text/UnicodeSet.html
+# https://github.com/antlr/antlr4/blob/8c50731894e045be3e19799b84b39e9a60e2ab61/tool/src/org/antlr/v4/automata/LexerATNFactory.java#L439
+# https://github.com/antlr/antlr4/blob/master/tool/src/org/antlr/v4/misc/EscapeSequenceParsing.java
+# Unicode codepoint is one character, in Python 3.3+: https://stackoverflow.com/a/42262842
+def charset_split(src):
+	ranges = []
+
+	start = 0
+	for end in range(1, len(src) + 1):
+		subset = src[start:end]
+
+		if len(subset) == 1 and subset != '\\':
+			ranges.append((ord(subset), ord(subset) + 1))
+			start += 1
+		elif len(subset) == 2
+
+
+
+def lexer_charset_interval(src):
+	elements = re.split(r'(\w-\w)', src) # Bug in this handling: ["\\\u0000-\u001F]
+	ranges = []
+	for element in elements:
+		if not element:
+			continue
+
+		# Convert character sequences like \n, \t, etc. into a single character.
+		element = bytes(element, 'utf-8').decode('unicode_escape') # Bug here too: [+\-]
+		print(element)
+		if len(element) > 1:
+			if element[1] == '-' and len(element) == 3:
+				ranges.append((ord(element[0]), ord(element[2]) + 1))
+			else:
+				for char in element:
+					ranges.append((ord(char), ord(char) + 1))
+		elif len(element) == 1:
+			ranges.append((ord(element), ord(element) + 1))
+	return ranges
+
+def process_charset(src):
+	return lexer_charset_interval(src[1:-1])
 
 class Node():
 	def __init__(self):
@@ -144,7 +198,7 @@ def build_graph(rule, parent):
 		elif lexer_atom and rule.characterRange():
 			print('characterRange', rule.characterRange())
 		elif lexer_atom and rule.LEXER_CHAR_SET():
-			print('charSet', rule.LEXER_CHAR_SET())
+			print('charSet', str(rule.LEXER_CHAR_SET()), process_charset(str(rule.LEXER_CHAR_SET())))
 		else:
 			add_children(rule, parent)
 
@@ -158,7 +212,7 @@ def build_graph(rule, parent):
 		elif rule.characterRange():
 			print('characterRange', rule.characterRange())
 		elif rule.LEXER_CHAR_SET():
-			print('charSet', rule.LEXER_CHAR_SET())
+			print('charSet', str(rule.LEXER_CHAR_SET()), process_charset(str(rule.LEXER_CHAR_SET())))
 
 	elif isinstance(rule, ParserRuleContext):
 		add_children(rule, parent)
