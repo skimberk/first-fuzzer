@@ -1,5 +1,6 @@
 import re
 from enum import Enum, auto
+from collections import namedtuple
 
 from antlr4 import CommonTokenStream, FileStream, ParserRuleContext
 
@@ -8,154 +9,141 @@ from antlr_stuff.compiled.ANTLRv4Lexer import ANTLRv4Lexer
 
 from charset_parser import lexer_charset_interval
 
-def process_charset(src):
-	return lexer_charset_interval(src[1:-1])
+class NodeType(Enum):
+	ROOT = auto()
+	PARSER_RULE = auto()
+	LEXER_RULE = auto()
+	RULE_REF = auto()
+	TOKEN_REF = auto()
+	QUANTIFIER = auto()
+	ALTERNATIVE = auto()
+	STRING_LITERAL = auto()
+	CHAR_SET = auto()
+	NOT = auto()
+	DOT = auto()
 
-class Node():
-	def __init__(self):
-		self.children = []
+LEAF_TYPES = [
+	NodeType.RULE_REF,
+	NodeType.TOKEN_REF,
+	NodeType.STRING_LITERAL,
+	NodeType.CHAR_SET,
+	NodeType.DOT
+]
 
-	def add_child(self, child):
-		self.children.append(child)
+Node = namedtuple('Node', ['type', 'value'])
+Graph = namedtuple('Graph', ['nodes', 'edges'])
 
-class ParserRuleNode(Node):
-	def __init__(self, name):
-		super().__init__()
-		print('ParserRuleNode', name)
-		self.name = name
+def build_graph(rule):
+	nodes = []
+	edges = []
 
-class LexerRuleNode(Node):
-	def __init__(self, name):
-		super().__init__()
-		print('LexerRuleNode', name)
-		self.name = name
+	def add_node(node):
+		nodes.append(node)
+		edges.append([])
+		return len(nodes) - 1
 
-class RuleRefNode(Node):
-	def __init__(self, rule):
-		super().__init__()
-		print('RuleRefNode', rule)
-		self.rule = rule
+	def add_edge(parent, child):
+		edges[parent].append(child)
 
-class TokenRefNode(Node):
-	def __init__(self, token):
-		super().__init__()
-		print('TokenRefNode', token)
-		self.token = token
+	def add_child(parent_id, child):
+		child_id = add_node(child)
+		add_edge(parent_id, child_id)
+		return child_id
 
-class QuantifierNode(Node):
-	def __init__(self, quant):
-		super().__init__()
-		print('QuantifierNode', quant)
-		self.quant = quant
+	def add_children(rule, node):
+		if rule.getChildCount():
+			for child in rule.children:
+				_build_graph(child, node)
 
-class AlternativeNode(Node):
-	def __init__(self, label):
-		super().__init__()
-		print('AlternativeNode', label)
-		self.label = label
+	def _build_graph(rule, parent):
+		if isinstance(rule, ANTLRv4Parser.ParserRuleSpecContext):
+			node = Node(NodeType.PARSER_RULE, str(rule.RULE_REF()))
+			node_id = add_child(parent, node)
+			add_children(rule, node_id)
 
-class StringLiteralNode(Node):
-	def __init__(self, value):
-		super().__init__()
-		print('StringLiteralNode', value)
-		self.value = value
+		elif isinstance(rule, ANTLRv4Parser.LexerRuleSpecContext):
+			node = Node(NodeType.LEXER_RULE, str(rule.TOKEN_REF()))
+			node_id = add_child(parent, node)
+			add_children(rule, node_id)
 
-class CharsetNode(Node):
-	def __init__(self, charset):
-		super().__init__()
-		print('CharsetNode', charset)
-		self.charset = charset
+		elif isinstance(rule, (ANTLRv4Parser.ElementContext, ANTLRv4Parser.LexerElementContext)):
+			suffix = None
+			if rule.ebnfSuffix():
+				suffix = rule.ebnfSuffix()
+			elif hasattr(rule, 'ebnf') and rule.ebnf() and rule.ebnf().blockSuffix():
+				suffix = rule.ebnf().blockSuffix().ebnfSuffix()
 
-class NotNode(Node):
-	def __init__(self):
-		super().__init__()
-		print('Not')
+			if suffix:
+				node = Node(NodeType.QUANTIFIER, str(suffix.children[0]))
+				node_id = add_child(parent, node)
+				add_children(rule, node_id)
+			else:
+				_build_graph(rule.children[0], parent)
 
-def add_children(rule, node):
-	if rule.getChildCount():
-		for child in rule.children:
-			build_graph(child, node)
+		elif isinstance(rule, ANTLRv4Parser.RulerefContext):
+			node = Node(NodeType.RULE_REF, str(rule.RULE_REF()))
+			add_child(parent, node)
 
-def build_graph(rule, parent):
-	if isinstance(rule, ANTLRv4Parser.ParserRuleSpecContext):
-		node = ParserRuleNode(str(rule.RULE_REF()))
-		parent.add_child(node)
-		add_children(rule, node)
+		elif isinstance(rule, ANTLRv4Parser.TerminalContext):
+			if rule.TOKEN_REF():
+				node = Node(NodeType.TOKEN_REF, str(rule.TOKEN_REF()))
+				add_child(parent, node)
+			elif rule.STRING_LITERAL():
+				node = Node(NodeType.STRING_LITERAL, str(rule.STRING_LITERAL()))
+				add_child(parent, node)
 
-	elif isinstance(rule, ANTLRv4Parser.LexerRuleSpecContext):
-		node = LexerRuleNode(str(rule.TOKEN_REF()))
-		parent.add_child(node)
-		add_children(rule, node)
+		elif isinstance(rule, ANTLRv4Parser.LabeledAltContext):
+			label = None
+			if rule.identifier() and (rule.identifier().TOKEN_REF() or rule.identifier().RULE_REF()):
+				label = str(rule.identifier().TOKEN_REF() or rule.identifier().RULE_REF())
 
-	elif isinstance(rule, (ANTLRv4Parser.ElementContext, ANTLRv4Parser.LexerElementContext)):
-		suffix = None
-		if rule.ebnfSuffix():
-			suffix = rule.ebnfSuffix()
-		elif hasattr(rule, 'ebnf') and rule.ebnf() and rule.ebnf().blockSuffix():
-			suffix = rule.ebnf().blockSuffix().ebnfSuffix()
+			node = Node(NodeType.ALTERNATIVE, label)
+			node_id = add_child(parent, node)
+			add_children(rule.alternative(), node_id)
 
-		if suffix:
-			node = QuantifierNode(suffix.children[0])
-			parent.add_child(node)
-			add_children(rule, node)
-		else:
-			build_graph(rule.children[0], parent)
+		elif isinstance(rule, (ANTLRv4Parser.AtomContext, ANTLRv4Parser.LexerAtomContext)):
+			lexer_atom = isinstance(rule, ANTLRv4Parser.LexerAtomContext)
 
-	elif isinstance(rule, ANTLRv4Parser.RulerefContext):
-		node = RuleRefNode(str(rule.RULE_REF()))
-		parent.add_child(node)
+			if rule.DOT():
+				node = Node(NodeType.DOT, None)
+				add_child(parent, node)
+			elif rule.notSet():
+				node = Node(NodeType.NOT, None)
+				node_id = add_child(parent, node)
+				add_children(rule.notSet(), node_id)
+			elif lexer_atom and rule.characterRange():
+				print('TODO: characterRange', rule.characterRange())
+			elif lexer_atom and rule.LEXER_CHAR_SET():
+				char_set = lexer_charset_interval(str(rule.LEXER_CHAR_SET())[1:-1])
+				node = Node(NodeType.CHAR_SET, char_set)
+				add_child(parent, node)
+			else:
+				add_children(rule, parent)
 
-	elif isinstance(rule, ANTLRv4Parser.TerminalContext):
-		if rule.TOKEN_REF():
-			node = TokenRefNode(str(rule.TOKEN_REF()))
-			parent.add_child(node)
-		elif rule.STRING_LITERAL():
-			node = StringLiteralNode(str(rule.STRING_LITERAL()))
-			parent.add_child(node)
+		elif isinstance(rule, ANTLRv4Parser.SetElementContext):
+			if rule.TOKEN_REF():
+				node = Node(NodeType.TOKEN_REF, str(rule.TOKEN_REF()))
+				add_child(parent, node)
+			elif rule.STRING_LITERAL():
+				node = Node(NodeType.STRING_LITERAL, str(rule.STRING_LITERAL()))
+				add_child(parent, node)
+			elif rule.characterRange():
+				print('TODO: characterRange', rule.characterRange())
+			elif rule.LEXER_CHAR_SET():
+				char_set = lexer_charset_interval(str(rule.LEXER_CHAR_SET())[1:-1])
+				node = Node(NodeType.CHAR_SET, char_set)
+				add_child(parent, node)
 
-	elif isinstance(rule, ANTLRv4Parser.LabeledAltContext):
-		label = None
-		if rule.identifier() and (rule.identifier().TOKEN_REF() or rule.identifier().RULE_REF()):
-			label = str(rule.identifier().TOKEN_REF() or rule.identifier().RULE_REF())
-
-		node = AlternativeNode(label)
-		parent.add_child(node)
-		add_children(rule.alternative(), node)
-
-	elif isinstance(rule, (ANTLRv4Parser.AtomContext, ANTLRv4Parser.LexerAtomContext)):
-		lexer_atom = isinstance(rule, ANTLRv4Parser.LexerAtomContext)
-
-		if rule.DOT():
-			print('DOT')
-		elif rule.notSet():
-			node = NotNode()
-			parent.add_child(node)
-			add_children(rule.notSet(), node)
-		elif lexer_atom and rule.characterRange():
-			print('characterRange', rule.characterRange())
-		elif lexer_atom and rule.LEXER_CHAR_SET():
-			print('charSet', str(rule.LEXER_CHAR_SET()), process_charset(str(rule.LEXER_CHAR_SET())))
-		else:
+		elif isinstance(rule, ParserRuleContext):
 			add_children(rule, parent)
 
-	elif isinstance(rule, ANTLRv4Parser.SetElementContext):
-		if rule.TOKEN_REF():
-			node = TokenRefNode(str(rule.TOKEN_REF()))
-			parent.add_child(node)
-		elif rule.STRING_LITERAL():
-			node = StringLiteralNode(str(rule.STRING_LITERAL()))
-			parent.add_child(node)
-		elif rule.characterRange():
-			print('characterRange', rule.characterRange())
-		elif rule.LEXER_CHAR_SET():
-			print('charSet', str(rule.LEXER_CHAR_SET()), process_charset(str(rule.LEXER_CHAR_SET())))
+	root_id = add_node(Node(NodeType.ROOT, None))
+	_build_graph(rule, root_id)
 
-	elif isinstance(rule, ParserRuleContext):
-		add_children(rule, parent)
+	return Graph(nodes, edges)
 
 antlr_parser = ANTLRv4Parser(CommonTokenStream(ANTLRv4Lexer(FileStream('JSON.g4', encoding='utf-8'))))
 current_root = antlr_parser.grammarSpec()
+graph = build_graph(current_root)
 
-node = Node()
-build_graph(current_root, node)
-print(node.children[11].children)
+print(graph)
