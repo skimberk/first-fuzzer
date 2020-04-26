@@ -1,6 +1,7 @@
 import re
 from enum import Enum, auto
 from collections import namedtuple
+from random import randrange
 
 from antlr4 import CommonTokenStream, FileStream, ParserRuleContext
 
@@ -75,6 +76,7 @@ def build_graph(rule):
 			lexer_rules[str(rule.TOKEN_REF())] = node_id
 
 		elif isinstance(rule, (ANTLRv4Parser.ElementContext, ANTLRv4Parser.LexerElementContext)):
+			# TODO: Make sure this works with +? and *? and +? and ??
 			suffix = None
 			if rule.ebnfSuffix():
 				suffix = rule.ebnfSuffix()
@@ -97,7 +99,7 @@ def build_graph(rule):
 				node = Node(NodeType.TOKEN_REF, str(rule.TOKEN_REF()))
 				add_child(parent, node)
 			elif rule.STRING_LITERAL():
-				node = Node(NodeType.STRING_LITERAL, str(rule.STRING_LITERAL()))
+				node = Node(NodeType.STRING_LITERAL, str(rule.STRING_LITERAL())[1:-1])
 				add_child(parent, node)
 
 		elif isinstance(rule, (ANTLRv4Parser.RuleAltListContext, ANTLRv4Parser.LexerAltListContext)):
@@ -143,7 +145,7 @@ def build_graph(rule):
 				node = Node(NodeType.TOKEN_REF, str(rule.TOKEN_REF()))
 				add_child(parent, node)
 			elif rule.STRING_LITERAL():
-				node = Node(NodeType.STRING_LITERAL, str(rule.STRING_LITERAL()))
+				node = Node(NodeType.STRING_LITERAL, str(rule.STRING_LITERAL())[1:-1])
 				add_child(parent, node)
 			elif rule.characterRange():
 				print('TODO: characterRange', rule.characterRange())
@@ -167,9 +169,9 @@ def graph_to_str(graph):
 	edges = graph.edges
 
 	def _s(node_id, depth):
+		nonlocal out
 		node = nodes[node_id]
 		indent = depth * '| '
-		nonlocal out
 		out += indent + node.type.name + ' ' + str(node.value) + '\n'
 
 		for child_id in edges[node_id]:
@@ -178,9 +180,77 @@ def graph_to_str(graph):
 	_s(0, 0)
 	return out
 
+def generate_from_graph(graph, start_rule):
+	assert start_rule in graph.parser_rules.keys()
+
+	out = ''
+
+	nodes = graph.nodes
+	edges = graph.edges
+	parser_rules = graph.parser_rules
+	lexer_rules = graph.lexer_rules
+
+	def _gen(node_id):
+		nonlocal out
+		node = nodes[node_id]
+		children_ids = edges[node_id]
+
+		if node.type == NodeType.RULE_REF:
+			_gen(parser_rules[node.value])
+		elif node.type == NodeType.TOKEN_REF:
+			_gen(lexer_rules[node.value])
+		elif node.type == NodeType.STRING_LITERAL:
+			out += node.value
+		elif node.type == NodeType.DOT:
+			out += 'DOT'
+		elif node.type == NodeType.CHAR_SET:
+			num_possibilities = 0
+			char_set = node.value
+
+			for s in char_set:
+				num_possibilities += s[1] - s[0]
+
+			choice = randrange(num_possibilities)
+
+			for s in char_set:
+				length = s[1] - s[0]
+
+				if choice < length:
+					out += chr(s[0] + choice)
+					break
+				else:
+					choice -= length
+		elif node.type == NodeType.ALTERNATIVES:
+			num_children = len(children_ids)
+			if num_children > 0:
+				_gen(children_ids[randrange(num_children)])
+		elif node.type == NodeType.QUANTIFIER:
+			quant = node.value
+
+			if quant == '?':
+				if randrange(2) == 0:
+					for child_id in children_ids:
+						_gen(child_id)
+			elif quant in ('+', '*'):
+				if quant == '+':
+					for child_id in children_ids:
+						_gen(child_id)
+
+				while randrange(2) == 0:
+					for child_id in children_ids:
+						_gen(child_id)
+		else:
+			for child_id in children_ids:
+				_gen(child_id)
+
+	_gen(parser_rules[start_rule])
+
+	return out
+
 antlr_parser = ANTLRv4Parser(CommonTokenStream(ANTLRv4Lexer(FileStream('JSON.g4', encoding='utf-8'))))
 current_root = antlr_parser.grammarSpec()
 graph = build_graph(current_root)
 
 print(graph)
 print(graph_to_str(graph))
+print(generate_from_graph(graph, 'json'))
