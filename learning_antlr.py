@@ -16,6 +16,7 @@ class NodeType(Enum):
 	RULE_REF = auto()
 	TOKEN_REF = auto()
 	QUANTIFIER = auto()
+	ALTERNATIVES = auto()
 	ALTERNATIVE = auto()
 	STRING_LITERAL = auto()
 	CHAR_SET = auto()
@@ -31,11 +32,14 @@ LEAF_TYPES = [
 ]
 
 Node = namedtuple('Node', ['type', 'value'])
-Graph = namedtuple('Graph', ['nodes', 'edges'])
+Graph = namedtuple('Graph', ['nodes', 'edges', 'parser_rules', 'lexer_rules'])
 
 def build_graph(rule):
 	nodes = []
 	edges = []
+
+	parser_rules = {}
+	lexer_rules = {}
 
 	def add_node(node):
 		nodes.append(node)
@@ -61,10 +65,14 @@ def build_graph(rule):
 			node_id = add_child(parent, node)
 			add_children(rule, node_id)
 
+			parser_rules[str(rule.RULE_REF())] = node_id
+
 		elif isinstance(rule, ANTLRv4Parser.LexerRuleSpecContext):
 			node = Node(NodeType.LEXER_RULE, str(rule.TOKEN_REF()))
 			node_id = add_child(parent, node)
 			add_children(rule, node_id)
+
+			lexer_rules[str(rule.TOKEN_REF())] = node_id
 
 		elif isinstance(rule, (ANTLRv4Parser.ElementContext, ANTLRv4Parser.LexerElementContext)):
 			suffix = None
@@ -92,6 +100,11 @@ def build_graph(rule):
 				node = Node(NodeType.STRING_LITERAL, str(rule.STRING_LITERAL()))
 				add_child(parent, node)
 
+		elif isinstance(rule, (ANTLRv4Parser.RuleAltListContext, ANTLRv4Parser.LexerAltListContext)):
+			node = Node(NodeType.ALTERNATIVES, None)
+			node_id = add_child(parent, node)
+			add_children(rule, node_id)
+
 		elif isinstance(rule, ANTLRv4Parser.LabeledAltContext):
 			label = None
 			if rule.identifier() and (rule.identifier().TOKEN_REF() or rule.identifier().RULE_REF()):
@@ -100,6 +113,11 @@ def build_graph(rule):
 			node = Node(NodeType.ALTERNATIVE, label)
 			node_id = add_child(parent, node)
 			add_children(rule.alternative(), node_id)
+
+		elif isinstance(rule, ANTLRv4Parser.LexerAltContext):
+			node = Node(NodeType.ALTERNATIVE, None)
+			node_id = add_child(parent, node)
+			add_children(rule.lexerElements(), node_id)
 
 		elif isinstance(rule, (ANTLRv4Parser.AtomContext, ANTLRv4Parser.LexerAtomContext)):
 			lexer_atom = isinstance(rule, ANTLRv4Parser.LexerAtomContext)
@@ -140,10 +158,29 @@ def build_graph(rule):
 	root_id = add_node(Node(NodeType.ROOT, None))
 	_build_graph(rule, root_id)
 
-	return Graph(nodes, edges)
+	return Graph(nodes, edges, parser_rules, lexer_rules)
+
+def graph_to_str(graph):
+	out = ''
+
+	nodes = graph.nodes
+	edges = graph.edges
+
+	def _s(node_id, depth):
+		node = nodes[node_id]
+		indent = depth * '| '
+		nonlocal out
+		out += indent + node.type.name + ' ' + str(node.value) + '\n'
+
+		for child_id in edges[node_id]:
+			_s(child_id, depth + 1)
+
+	_s(0, 0)
+	return out
 
 antlr_parser = ANTLRv4Parser(CommonTokenStream(ANTLRv4Lexer(FileStream('JSON.g4', encoding='utf-8'))))
 current_root = antlr_parser.grammarSpec()
 graph = build_graph(current_root)
 
 print(graph)
+print(graph_to_str(graph))
