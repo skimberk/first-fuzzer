@@ -1,4 +1,5 @@
 import re
+from enum import Enum, auto
 
 from antlr4 import CommonTokenStream, FileStream, ParserRuleContext
 
@@ -6,9 +7,6 @@ from antlr_stuff.compiled.ANTLRv4Parser import ANTLRv4Parser
 from antlr_stuff.compiled.ANTLRv4Lexer import ANTLRv4Lexer
 
 from charset_parser import lexer_charset_interval
-
-antlr_parser = ANTLRv4Parser(CommonTokenStream(ANTLRv4Lexer(FileStream('JSON.g4', encoding='utf-8'))))
-current_root = antlr_parser.grammarSpec()
 
 def process_charset(src):
 	return lexer_charset_interval(src[1:-1])
@@ -154,6 +152,9 @@ def build_graph(rule, parent):
 
 	elif isinstance(rule, ParserRuleContext):
 		add_children(rule, parent)
+
+antlr_parser = ANTLRv4Parser(CommonTokenStream(ANTLRv4Lexer(FileStream('JSON.g4', encoding='utf-8'))))
+current_root = antlr_parser.grammarSpec()
 
 node = Node()
 build_graph(current_root, node)
