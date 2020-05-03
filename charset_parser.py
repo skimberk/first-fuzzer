@@ -1,3 +1,5 @@
+from unicode_range import maximum_unicode_codepoint
+
 escaped_values = {
 	# See https://github.com/antlr/antlr4/blob/8c50731894e045be3e19799b84b39e9a60e2ab61/tool/src/org/antlr/v4/misc/CharSupport.java#L26
 	'n': '\n',
@@ -11,9 +13,6 @@ escaped_values = {
 	'-': '-',
 	']': ']'
 }
-
-maximum_unicode_codepoint = 0x10FFFF
-
 
 class EscapeParseError(Exception):
 	pass

@@ -1,7 +1,7 @@
 import re
 from enum import Enum, auto
 from collections import namedtuple
-from random import randrange
+from random import randrange, choice
 
 from antlr4 import CommonTokenStream, FileStream, ParserRuleContext
 
@@ -9,6 +9,7 @@ from antlr_stuff.compiled.ANTLRv4Parser import ANTLRv4Parser
 from antlr_stuff.compiled.ANTLRv4Lexer import ANTLRv4Lexer
 
 from charset_parser import lexer_charset_interval
+from unicode_range import ranges_to_list, printable_unicode_ranges, printable_unicode_ranges_list
 
 class NodeType(Enum):
 	ROOT = auto()
@@ -190,6 +191,8 @@ def generate_from_graph(graph, start_rule):
 	parser_rules = graph.parser_rules
 	lexer_rules = graph.lexer_rules
 
+	ranges = {}
+
 	def _gen(node_id):
 		nonlocal out
 		node = nodes[node_id]
@@ -202,24 +205,22 @@ def generate_from_graph(graph, start_rule):
 		elif node.type == NodeType.STRING_LITERAL:
 			out += node.value
 		elif node.type == NodeType.DOT:
-			out += 'DOT'
+			out += chr(choice(printable_unicode_ranges_list))
 		elif node.type == NodeType.CHAR_SET:
-			num_possibilities = 0
-			char_set = node.value
+			if node_id not in ranges:
+				ranges[node_id] = ranges_to_list(node.value)
 
-			for s in char_set:
-				num_possibilities += s[1] - s[0]
+			out += chr(choice(ranges[node_id]))
+		elif node.type == NodeType.NOT:
+			if len(children_ids) == 1 and nodes[children_ids[0]].type == NodeType.CHAR_SET:
+				if node_id not in ranges:
+					charset_node = nodes[children_ids[0]]
+					negated_sets = set(printable_unicode_ranges_list) - set(ranges_to_list(charset_node.value))
+					ranges[node_id] = list(negated_sets)
 
-			choice = randrange(num_possibilities)
-
-			for s in char_set:
-				length = s[1] - s[0]
-
-				if choice < length:
-					out += chr(s[0] + choice)
-					break
-				else:
-					choice -= length
+				out += chr(choice(ranges[node_id]))
+			else:
+				raise Error('Not yet handled')
 		elif node.type == NodeType.ALTERNATIVES:
 			num_children = len(children_ids)
 			if num_children > 0:
@@ -247,10 +248,12 @@ def generate_from_graph(graph, start_rule):
 
 	return out
 
-antlr_parser = ANTLRv4Parser(CommonTokenStream(ANTLRv4Lexer(FileStream('JSON.g4', encoding='utf-8'))))
+antlr_parser = ANTLRv4Parser(CommonTokenStream(ANTLRv4Lexer(FileStream('Python3.g4', encoding='utf-8'))))
 current_root = antlr_parser.grammarSpec()
 graph = build_graph(current_root)
 
 print(graph)
 print(graph_to_str(graph))
-print(generate_from_graph(graph, 'json'))
+
+for x in range(1):
+	print(generate_from_graph(graph, 'single_input'))
