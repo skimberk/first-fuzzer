@@ -79,7 +79,7 @@ I'm running into issues figuring out the depth for nodes with circular dependenc
 
 A new idea: do breadth first search for each node until reaching a terminal node. Ignore nodes that have already been visited in the current search (reasoning: taking a circular dependency won't be shorter). On second thought, this might not work because of the alternating between min/max of depths of children.
 
-Another idea: pretty much the previous idea, but with depth first search (so ignore nodes already visited in order to get to the current node).
+Another idea: pretty much the previous idea, but with depth first search (so ignore nodes already visited in order to get to the current node). This seems to be working, although the way I'm currently tracking visited nodes seems inefficient (as I copy the set at each iteration). Thinking of checking out persistent data structures.
 
 ## Useful work
 

@@ -187,45 +187,6 @@ def graph_to_str(graph):
 	_s(0, 0)
 	return out
 
-def calculate_depths(graph):
-	nodes = graph.nodes
-	edges = graph.edges
-	parser_rules = graph.parser_rules
-	lexer_rules = graph.lexer_rules
-
-	depths = [None] * len(nodes)
-
-	def _calc(node_id):
-		depths[node_id] = -1
-		node = nodes[node_id]
-
-		children_ids = None
-		if node.type == NodeType.RULE_REF:
-			children_ids = [parser_rules[node.value]]
-		elif node.type == NodeType.TOKEN_REF:
-			if node.value != 'EOF':
-				children_ids = [lexer_rules[node.value]]
-		else:
-			children_ids = edges[node_id]
-
-		if len(children_ids) == 0:
-			depth = 0
-		else:
-			depth = float('inf')
-
-			for child_id in children_ids:
-				if depths[child_id] is None:
-					_calc(child_id)
-
-				if depths[child_id] + 1 < depth:
-					depth = depths[child_id] + 1
-
-		depths[node_id] = depth
-
-	_calc(0)
-
-	return depths
-
 def calculate_depths_v2(graph):
 	nodes = graph.nodes
 	edges = graph.edges
