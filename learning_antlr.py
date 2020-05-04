@@ -187,7 +187,7 @@ def graph_to_str(graph):
 	_s(0, 0)
 	return out
 
-def calculate_depths_v2(graph):
+def calculate_depths(graph):
 	nodes = graph.nodes
 	edges = graph.edges
 	parser_rules = graph.parser_rules
@@ -211,7 +211,9 @@ def calculate_depths_v2(graph):
 		if node.type == NodeType.RULE_REF:
 			children_ids = [parser_rules[node.value]]
 		elif node.type == NodeType.TOKEN_REF:
-			if node.value != 'EOF':
+			if node.value == 'EOF':
+				children_ids = []
+			else:
 				children_ids = [lexer_rules[node.value]]
 		else:
 			children_ids = edges[node_id]
@@ -259,17 +261,18 @@ def generate_from_graph(graph, start_rule):
 	lexer_rules = graph.lexer_rules
 
 	ranges = {}
+	depths = calculate_depths(graph)
 
-	def _gen(node_id):
+	def _gen(node_id, max_depth):
 		nonlocal out
 		node = nodes[node_id]
 		children_ids = edges[node_id]
 
 		if node.type == NodeType.RULE_REF:
-			_gen(parser_rules[node.value])
+			_gen(parser_rules[node.value], max_depth - 1)
 		elif node.type == NodeType.TOKEN_REF:
 			if node.value != 'EOF':
-				_gen(lexer_rules[node.value])
+				_gen(lexer_rules[node.value], max_depth - 1)
 		elif node.type == NodeType.STRING_LITERAL:
 			out += node.value
 		elif node.type == NodeType.DOT:
@@ -290,41 +293,46 @@ def generate_from_graph(graph, start_rule):
 			else:
 				out += 'NOT'
 		elif node.type == NodeType.ALTERNATIVES:
-			num_children = len(children_ids)
+			filtered_children_ids = list(filter(
+				lambda i: depths[i] <= max_depth,
+				children_ids
+			))
+			num_children = len(filtered_children_ids)
+
 			if num_children > 0:
-				_gen(children_ids[randrange(num_children)])
+				_gen(filtered_children_ids[randrange(num_children)], max_depth - 1)
 		elif node.type == NodeType.QUANTIFIER:
 			quant = node.value
 
 			if quant == '?':
 				if randrange(2) == 0:
 					for child_id in children_ids:
-						_gen(child_id)
+						_gen(child_id, max_depth - 1)
 			elif quant in ('+', '*'):
 				if quant == '+':
 					for child_id in children_ids:
-						_gen(child_id)
+						_gen(child_id, max_depth - 1)
 
 				while randrange(2) == 0:
 					for child_id in children_ids:
-						_gen(child_id)
+						_gen(child_id, max_depth - 1)
 		else:
 			for child_id in children_ids:
-				_gen(child_id)
+				_gen(child_id, max_depth - 1)
 
-	_gen(parser_rules[start_rule])
+	_gen(parser_rules[start_rule], 1000)
 
 	return out
 
-antlr_parser = ANTLRv4Parser(CommonTokenStream(ANTLRv4Lexer(FileStream('JSON.g4', encoding='utf-8'))))
+antlr_parser = ANTLRv4Parser(CommonTokenStream(ANTLRv4Lexer(FileStream('sexpression.g4', encoding='utf-8'))))
 current_root = antlr_parser.grammarSpec()
 graph = build_graph(current_root)
 
 # print(graph)
 # print(graph_to_str(graph))
 
-print(calculate_depths_v2(graph))
+print(calculate_depths(graph))
 # print(graph.parser_rules)
 
-for x in range(10):
-	print(generate_from_graph(graph, 'json'))
+for x in range(100):
+	print(generate_from_graph(graph, 'sexpr'))
