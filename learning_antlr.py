@@ -133,7 +133,10 @@ def build_graph(rule):
 				node_id = add_child(parent, node)
 				add_children(rule.notSet(), node_id)
 			elif lexer_atom and rule.characterRange():
-				print('TODO: characterRange', rule.characterRange())
+				start = ord(str(rule.characterRange().children[0])[1:-1])
+				end = ord(str(rule.characterRange().children[2])[1:-1]) + 1
+				node = Node(NodeType.CHAR_SET, [(start, end)])
+				add_child(parent, node)
 			elif lexer_atom and rule.LEXER_CHAR_SET():
 				char_set = lexer_charset_interval(str(rule.LEXER_CHAR_SET())[1:-1])
 				node = Node(NodeType.CHAR_SET, char_set)
@@ -149,7 +152,10 @@ def build_graph(rule):
 				node = Node(NodeType.STRING_LITERAL, str(rule.STRING_LITERAL())[1:-1])
 				add_child(parent, node)
 			elif rule.characterRange():
-				print('TODO: characterRange', rule.characterRange())
+				start = ord(str(rule.characterRange().children[0])[1:-1])
+				end = ord(str(rule.characterRange().children[2])[1:-1]) + 1
+				node = Node(NodeType.CHAR_SET, [(start, end)])
+				add_child(parent, node)
 			elif rule.LEXER_CHAR_SET():
 				char_set = lexer_charset_interval(str(rule.LEXER_CHAR_SET())[1:-1])
 				node = Node(NodeType.CHAR_SET, char_set)
@@ -181,6 +187,106 @@ def graph_to_str(graph):
 	_s(0, 0)
 	return out
 
+def calculate_depths(graph):
+	nodes = graph.nodes
+	edges = graph.edges
+	parser_rules = graph.parser_rules
+	lexer_rules = graph.lexer_rules
+
+	depths = [None] * len(nodes)
+
+	def _calc(node_id):
+		depths[node_id] = -1
+		node = nodes[node_id]
+
+		children_ids = None
+		if node.type == NodeType.RULE_REF:
+			children_ids = [parser_rules[node.value]]
+		elif node.type == NodeType.TOKEN_REF:
+			if node.value != 'EOF':
+				children_ids = [lexer_rules[node.value]]
+		else:
+			children_ids = edges[node_id]
+
+		if len(children_ids) == 0:
+			depth = 0
+		else:
+			depth = float('inf')
+
+			for child_id in children_ids:
+				if depths[child_id] is None:
+					_calc(child_id)
+
+				if depths[child_id] + 1 < depth:
+					depth = depths[child_id] + 1
+
+		depths[node_id] = depth
+
+	_calc(0)
+
+	return depths
+
+def calculate_depths_v2(graph):
+	nodes = graph.nodes
+	edges = graph.edges
+	parser_rules = graph.parser_rules
+	lexer_rules = graph.lexer_rules
+
+	depths = [None] * len(nodes)
+
+	def _calc(node_id, visited_node_ids):
+		if depths[node_id] is not None:
+			return depths[node_id]
+
+		if node_id in visited_node_ids:
+			return float('inf')
+
+		node = nodes[node_id]
+
+		new_visited_node_ids = visited_node_ids.copy()
+		new_visited_node_ids.add(node_id)
+
+		children_ids = None
+		if node.type == NodeType.RULE_REF:
+			children_ids = [parser_rules[node.value]]
+		elif node.type == NodeType.TOKEN_REF:
+			if node.value != 'EOF':
+				children_ids = [lexer_rules[node.value]]
+		else:
+			children_ids = edges[node_id]
+
+		if len(children_ids) == 0:
+			return 0
+
+		if node.type == NodeType.QUANTIFIER and node.value in ('?', '*'):
+			return 0
+
+		if node.type in (NodeType.ALTERNATIVES, NodeType.ROOT):
+			depth = float('inf')
+
+			for child_id in children_ids:
+				child_depth = _calc(child_id, new_visited_node_ids)
+
+				if child_depth < depth:
+					depth = child_depth
+
+			return depth + 1
+
+		depth = 0
+
+		for child_id in children_ids:
+			child_depth = _calc(child_id, new_visited_node_ids)
+
+			if child_depth > depth:
+				depth = child_depth
+
+		return depth + 1
+
+	for node_id in range(len(nodes)):
+		depths[node_id] = _calc(node_id, set())
+
+	return depths
+
 def generate_from_graph(graph, start_rule):
 	assert start_rule in graph.parser_rules.keys()
 
@@ -201,7 +307,8 @@ def generate_from_graph(graph, start_rule):
 		if node.type == NodeType.RULE_REF:
 			_gen(parser_rules[node.value])
 		elif node.type == NodeType.TOKEN_REF:
-			_gen(lexer_rules[node.value])
+			if node.value != 'EOF':
+				_gen(lexer_rules[node.value])
 		elif node.type == NodeType.STRING_LITERAL:
 			out += node.value
 		elif node.type == NodeType.DOT:
@@ -220,7 +327,7 @@ def generate_from_graph(graph, start_rule):
 
 				out += chr(choice(ranges[node_id]))
 			else:
-				raise Error('Not yet handled')
+				out += 'NOT'
 		elif node.type == NodeType.ALTERNATIVES:
 			num_children = len(children_ids)
 			if num_children > 0:
@@ -248,12 +355,15 @@ def generate_from_graph(graph, start_rule):
 
 	return out
 
-antlr_parser = ANTLRv4Parser(CommonTokenStream(ANTLRv4Lexer(FileStream('Python3.g4', encoding='utf-8'))))
+antlr_parser = ANTLRv4Parser(CommonTokenStream(ANTLRv4Lexer(FileStream('JSON.g4', encoding='utf-8'))))
 current_root = antlr_parser.grammarSpec()
 graph = build_graph(current_root)
 
-print(graph)
-print(graph_to_str(graph))
+# print(graph)
+# print(graph_to_str(graph))
 
-for x in range(1):
-	print(generate_from_graph(graph, 'single_input'))
+print(calculate_depths_v2(graph))
+# print(graph.parser_rules)
+
+for x in range(10):
+	print(generate_from_graph(graph, 'json'))

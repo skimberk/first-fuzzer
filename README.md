@@ -61,6 +61,26 @@ So, for the ANTLRv4 grammar:
 java -jar antlr-4.8-complete.jar -Dlanguage=Python3 ANTLRv4Lexer.g4 ANTLRv4Parser.g4 LexBasic.g4 -o compiled && cp LexerAdaptor.py compiled/LexerAdaptor.py
 ```
 
+## Calculating minimum depth
+
+We are calculating the minimum depth required to generate from any node so that we can limit our choices when generating in order to avoid stack overflows. We're defining the depth of a node to be the minimum number of recursive steps required to generate output for that node.
+
+For `Alternatives` node, we take the minimum depth of all its children (plus one).
+
+For optional nodes (so quantifiers `*` and `?`) the minimum depth is zero.
+
+For terminal (i.e. leaf) nodes the minimum depth is zero.
+
+Otherwise, for a node that needs all its children, the depth is the maximum of the depths of all its children (plus one).
+
+### Circular dependencies
+
+I'm running into issues figuring out the depth for nodes with circular dependencies. Currently, I'm doing a depth first search and setting depth of the current node based on depths of children.
+
+A new idea: do breadth first search for each node until reaching a terminal node. Ignore nodes that have already been visited in the current search (reasoning: taking a circular dependency won't be shorter). On second thought, this might not work because of the alternating between min/max of depths of children.
+
+Another idea: pretty much the previous idea, but with depth first search (so ignore nodes already visited in order to get to the current node).
+
 ## Useful work
 
 Generating code from ANTLR v4 grammars:
