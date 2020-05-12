@@ -251,7 +251,7 @@ def calculate_depths(graph):
 
 	return depths
 
-def generate_from_graph(graph, start_rule, ranges, depths):
+def generate_from_graph(graph, start_rule, max_total_depth, ranges, depths):
 	assert start_rule in graph.parser_rules.keys()
 
 	out = ''
@@ -327,23 +327,17 @@ def generate_from_graph(graph, start_rule, ranges, depths):
 			for child_id in children_ids:
 				_gen(child_id, max_depth - 1)
 
-	_gen(parser_rules[start_rule], 500)
+	_gen(parser_rules[start_rule], max_total_depth)
 
 	return out
 
-antlr_parser = ANTLRv4Parser(CommonTokenStream(ANTLRv4Lexer(FileStream('JSON.g4', encoding='utf-8'))))
-current_root = antlr_parser.grammarSpec()
-graph = build_graph(current_root)
+def generate(grammar_file, start_rule, iterations, max_depth):
+	antlr_parser = ANTLRv4Parser(CommonTokenStream(ANTLRv4Lexer(FileStream(grammar_file, encoding='utf-8'))))
+	current_root = antlr_parser.grammarSpec()
+	graph = build_graph(current_root)
 
-# print(graph)
-# print(graph_to_str(graph))
+	ranges = {}
+	depths = calculate_depths(graph)
 
-ranges = {}
-depths = calculate_depths(graph)
-
-print(depths)
-# print(graph.parser_rules)
-
-for x in range(1000):
-	print(generate_from_graph(graph, 'json', ranges, depths))
-
+	for n in range(iterations):
+		yield generate_from_graph(graph, start_rule, max_depth, ranges, depths)
