@@ -149,7 +149,8 @@ def build_graph(rule):
 				node = Node(NodeType.TOKEN_REF, str(rule.TOKEN_REF()))
 				add_child(parent, node)
 			elif rule.STRING_LITERAL():
-				node = Node(NodeType.STRING_LITERAL, str(rule.STRING_LITERAL())[1:-1])
+				string_value = bytes(str(rule.STRING_LITERAL())[1:-1], 'utf-8').decode('unicode_escape')
+				node = Node(NodeType.STRING_LITERAL, string_value)
 				add_child(parent, node)
 			elif rule.characterRange():
 				start = ord(str(rule.characterRange().children[0])[1:-1])
@@ -250,7 +251,7 @@ def calculate_depths(graph):
 
 	return depths
 
-def generate_from_graph(graph, start_rule):
+def generate_from_graph(graph, start_rule, depths):
 	assert start_rule in graph.parser_rules.keys()
 
 	out = ''
@@ -261,7 +262,6 @@ def generate_from_graph(graph, start_rule):
 	lexer_rules = graph.lexer_rules
 
 	ranges = {}
-	depths = calculate_depths(graph)
 
 	def _gen(node_id, max_depth):
 		nonlocal out
@@ -283,15 +283,24 @@ def generate_from_graph(graph, start_rule):
 
 			out += chr(choice(ranges[node_id]))
 		elif node.type == NodeType.NOT:
-			if len(children_ids) == 1 and nodes[children_ids[0]].type == NodeType.CHAR_SET:
-				if node_id not in ranges:
-					charset_node = nodes[children_ids[0]]
-					negated_sets = set(printable_unicode_ranges_list) - set(ranges_to_list(charset_node.value))
-					ranges[node_id] = list(negated_sets)
+			if node_id not in ranges:
+				set_to_not = set()
 
-				out += chr(choice(ranges[node_id]))
-			else:
-				out += 'NOT'
+				for child_id in children_ids:
+					child = nodes[child_id]
+
+					if child.type == NodeType.STRING_LITERAL:
+						assert len(child.value) == 1, 'String literal in NOT can only have a single character'
+						set_to_not.add(ord(child.value))
+					elif node.type == NodeType.CHAR_SET:
+						set_to_not.update(ranges_to_list(child.value))
+					else:
+						raise Exception('Unhandled NOT child type', child.type)
+
+				negated_sets = set(printable_unicode_ranges_list) - set_to_not
+				ranges[node_id] = list(negated_sets)
+
+			out += chr(choice(ranges[node_id]))
 		elif node.type == NodeType.ALTERNATIVES:
 			filtered_children_ids = list(filter(
 				lambda i: depths[i] <= max_depth,
@@ -320,7 +329,7 @@ def generate_from_graph(graph, start_rule):
 			for child_id in children_ids:
 				_gen(child_id, max_depth - 1)
 
-	_gen(parser_rules[start_rule], 1000)
+	_gen(parser_rules[start_rule], 500)
 
 	return out
 
@@ -331,8 +340,10 @@ graph = build_graph(current_root)
 # print(graph)
 # print(graph_to_str(graph))
 
-print(calculate_depths(graph))
+depths = calculate_depths(graph)
+
+print(depths)
 # print(graph.parser_rules)
 
-for x in range(100):
-	print(generate_from_graph(graph, 'sexpr'))
+for x in range(1000):
+	print(generate_from_graph(graph, 'sexpr', depths))
