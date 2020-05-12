@@ -251,7 +251,7 @@ def calculate_depths(graph):
 
 	return depths
 
-def generate_from_graph(graph, start_rule, depths):
+def generate_from_graph(graph, start_rule, ranges, depths):
 	assert start_rule in graph.parser_rules.keys()
 
 	out = ''
@@ -260,8 +260,6 @@ def generate_from_graph(graph, start_rule, depths):
 	edges = graph.edges
 	parser_rules = graph.parser_rules
 	lexer_rules = graph.lexer_rules
-
-	ranges = {}
 
 	def _gen(node_id, max_depth):
 		nonlocal out
@@ -292,7 +290,7 @@ def generate_from_graph(graph, start_rule, depths):
 					if child.type == NodeType.STRING_LITERAL:
 						assert len(child.value) == 1, 'String literal in NOT can only have a single character'
 						set_to_not.add(ord(child.value))
-					elif node.type == NodeType.CHAR_SET:
+					elif child.type == NodeType.CHAR_SET:
 						set_to_not.update(ranges_to_list(child.value))
 					else:
 						raise Exception('Unhandled NOT child type', child.type)
@@ -333,17 +331,19 @@ def generate_from_graph(graph, start_rule, depths):
 
 	return out
 
-antlr_parser = ANTLRv4Parser(CommonTokenStream(ANTLRv4Lexer(FileStream('sexpression.g4', encoding='utf-8'))))
+antlr_parser = ANTLRv4Parser(CommonTokenStream(ANTLRv4Lexer(FileStream('JSON.g4', encoding='utf-8'))))
 current_root = antlr_parser.grammarSpec()
 graph = build_graph(current_root)
 
 # print(graph)
 # print(graph_to_str(graph))
 
+ranges = {}
 depths = calculate_depths(graph)
 
 print(depths)
 # print(graph.parser_rules)
 
 for x in range(1000):
-	print(generate_from_graph(graph, 'sexpr', depths))
+	print(generate_from_graph(graph, 'json', ranges, depths))
+
